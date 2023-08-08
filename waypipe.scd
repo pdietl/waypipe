@@ -14,7 +14,7 @@ waypipe - A transparent proxy for Wayland applications
 *waypipe* *bench* _bandwidth_++
 *waypipe* [*--version*] [*-h*, *--help*]
 
-\[options...\] = [*-c*, *--compress* C] [*-d*, *--debug*] [*-n*, *--no-gpu*] [*-o*, *--oneshot*] [*-s*, *--socket* S] [*--allow-tiled*] [*--control* C] [*--display* D] [*--drm-node* R] [*--remote-node* R] [*--remote-bin* R] [*--login-shell*] [*--threads* T] [*--unlink-socket*] [*--video*[=V]]
+\[options...\] = [*-c*, *--compress* C] [*-d*, *--debug*] [*-n*, *--no-gpu*] [*-o*, *--oneshot*] [*-s*, *--socket* S] [*--allow-tiled*] [*--control* C] [*--display* D] [*--drm-node* R] [*--remote-node* R] [*--remote-bin* R] [*--login-shell*] [*--threads* T] [*--unlink-socket*] [*--video*[=V]] [*--vsock*]
 
 
 # DESCRIPTION
@@ -80,6 +80,8 @@ compressible as images containing pictures.
 	_/tmp/waypipe-client.sock_; and in ssh mode, *S* gives the prefix used by
 	both the client and the server for their socket paths. The default prefix
 	in ssh mode is _/tmp/waypipe_.
+
+	When vsock is enabled use *S* to specify a CID and a port number.
 
 *--version*
 	Briefly describe Waypipe's version and the features it was built with,
@@ -162,6 +164,12 @@ compressible as images containing pictures.
 
 *--hwvideo*
 	Deprecated option, equivalent to --video=hw .
+
+*--vsock*
+	Use vsock instead of unix sockets. This is used when waypipe is running in
+	virtual machines. With this option enabled specify a CID and a port number in *S*.
+	CID is only used in the server mode and can be omitted when connecting from a
+	guest virtual machine to host.
 
 # EXAMPLE 
 
@@ -264,6 +272,40 @@ When the ssh forwarding breaks, on _rserv_, reconnect with
 	ssh -fN -L /tmp/waypipe-lserv-2.sock:/tmp/waypipe.sock user@lserv
 	waypipe recon /tmp/ctrl-lserv.pipe /tmp/waypipe-lserv-2.sock
 ```
+
+## Running waypipe in virtual machines
+
+When running waypipe in virtual machines on the same host it is possible to use vsock
+for efficient inter-vm communication. The following scenarios are supported:
+
+- Running applications on host from guest.
+
+```
+	host> waypipe --vsock -s 1234 client
+	guest> waypipe --vsock -s 1234 server weston-terminal
+```
+
+- Running applications in a guest virtual machine from host.
+
+```
+	guest> waypipe --vsock -s 1234 client
+	host> waypipe --vsock -s 3:1234 server weston-terminal
+```
+
+In this example waypipe server connects to a virtual machine with CID 3 on port 1234.
+
+- Running applications in a guest virtual machine from other guest virtual machines.
+When running both client and server in virtual machines it is possble to enable the
+VMADDR_FLAG_TO_HOST flag for sibling communication by prefixing the CID with an s:
+
+```
+	guest> waypipe --vsock -s 1234 client
+	guest> waypipe --vsock -s s3:1234 server weston-terminal
+```
+
+In this case all packets will be routed to host where they can be forwarded to another
+virtual machine with a vhost-device-vsock device or some other utility.
+
 
 # ENVIRONMENT
 

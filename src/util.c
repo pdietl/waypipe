@@ -41,6 +41,9 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef HAS_VSOCK
+#include <linux/vm_sockets.h>
+#endif
 
 int parse_uint32(const char *str, uint32_t *val)
 {
@@ -663,3 +666,77 @@ void cleanup_transfer_queue(struct transfer_queue *td)
 	free(td->vecs);
 	free(td->meta);
 }
+
+#ifdef HAS_VSOCK
+int connect_to_vsock(uint32_t port, uint32_t cid, bool to_host, int *socket_fd)
+{
+	wp_debug("Connecting to vsock on port %d, cid %d, send to host %d",
+			port, cid, to_host);
+
+	int chanfd = socket(AF_VSOCK, SOCK_STREAM, 0);
+	if (chanfd == -1) {
+		wp_error("Error creating socket: %s", strerror(errno));
+		return -1;
+	}
+
+	struct sockaddr_vm addr;
+	memset(&addr, 0, sizeof(struct sockaddr_vm));
+	addr.svm_family = AF_VSOCK;
+	addr.svm_port = port;
+	addr.svm_cid = cid;
+	if (to_host) {
+		addr.svm_flags = VMADDR_FLAG_TO_HOST;
+	}
+
+	if ((connect(chanfd, (struct sockaddr *)&addr,
+			    sizeof(struct sockaddr_vm))) == -1) {
+		wp_error("Error connecting to vsock at port %d: %s", port,
+				strerror(errno));
+		checked_close(chanfd);
+		return -1;
+	}
+	*socket_fd = chanfd;
+	return 0;
+}
+
+int listen_on_vsock(uint32_t port, int nmaxclients, int *socket_fd_out)
+{
+	wp_debug("Listening on vsock port %d", port);
+
+	int sock = socket(AF_VSOCK, SOCK_STREAM, 0);
+	if (sock == -1) {
+		wp_error("Error creating socket: %s", strerror(errno));
+		return -1;
+	}
+
+	if (set_nonblocking(sock) == -1) {
+		wp_error("Error making socket nonblocking: %s",
+				strerror(errno));
+		checked_close(sock);
+		return -1;
+	}
+
+	struct sockaddr_vm addr;
+	memset(&addr, 0, sizeof(struct sockaddr_vm));
+	addr.svm_family = AF_VSOCK;
+	addr.svm_port = port;
+	addr.svm_cid = VMADDR_CID_ANY;
+	if (bind(sock, (struct sockaddr *)&addr, sizeof(struct sockaddr_vm)) ==
+			-1) {
+		wp_error("Error binding vsock at cid %d port %d: %s",
+				addr.svm_cid, port, strerror(errno));
+		checked_close(sock);
+		return -1;
+	}
+
+	if (listen(sock, nmaxclients) == -1) {
+		wp_error("Error listening to socket at cid %d port %d: %s",
+				addr.svm_cid, port, strerror(errno));
+		checked_close(sock);
+		return -1;
+	}
+
+	*socket_fd_out = sock;
+	return 0;
+}
+#endif

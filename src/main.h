@@ -41,6 +41,10 @@ struct main_config {
 	enum video_coding_fmt video_fmt;
 	bool prefer_hwvideo;
 	bool old_video_mode;
+	bool vsock;
+	uint32_t vsock_cid;
+	uint32_t vsock_port;
+	bool vsock_to_host;
 };
 struct globals {
 	const struct main_config *config;

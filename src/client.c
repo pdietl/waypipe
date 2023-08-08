@@ -771,8 +771,10 @@ int run_client(int cwd_fd, const char *sock_folder_name, int sock_folder_fd,
 		retcode = run_multi_client(cwd_fd, channelsock, &eol_pid,
 				config, display_path);
 	}
-	unlink_at_folder(cwd_fd, sock_folder_fd, sock_folder_name,
-			sock_filename);
+	if (!config->vsock) {
+		unlink_at_folder(cwd_fd, sock_folder_fd, sock_folder_name,
+				sock_filename);
+	}
 	int cleanup_type = shutdown_flag ? WNOHANG : 0;
 
 	int status = -1;
@@ -787,7 +789,9 @@ fail:
 	if (eol_pid) {
 		waitpid(eol_pid, NULL, 0);
 	}
-	unlink_at_folder(cwd_fd, sock_folder_fd, sock_folder_name,
-			sock_filename);
+	if (!config->vsock) {
+		unlink_at_folder(cwd_fd, sock_folder_fd, sock_folder_name,
+				sock_filename);
+	}
 	return EXIT_FAILURE;
 }

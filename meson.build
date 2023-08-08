@@ -66,6 +66,9 @@ is_darwin = host_machine.system() == 'darwin'
 if (is_linux or is_darwin) and get_option('with_systemtap') and cc.has_header('sys/sdt.h')
 	config_data.set('HAS_USDT', 1, description: 'Enable static trace probes')
 endif
+if is_linux and cc.has_header('linux/vm_sockets.h')
+	config_data.set('HAS_VSOCK', 1, description: 'Enable VM Sockets (VSOCK)')
+endif
 liblz4 = dependency('liblz4', version: '>=1.7.0', required: get_option('with_lz4'))
 if liblz4.found()
 	config_data.set('HAS_LZ4', 1, description: 'Enable LZ4 compression')

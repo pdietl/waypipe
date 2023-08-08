@@ -509,4 +509,9 @@ void zeroed_aligned_free(void *data, void **handle);
  */
 int open_folder(const char *name);
 
+#ifdef HAS_VSOCK
+int connect_to_vsock(uint32_t port, uint32_t cid, bool to_host, int *socket_fd);
+int listen_on_vsock(uint32_t port, int nmaxclients, int *socket_fd_out);
+#endif
+
 #endif // WAYPIPE_UTIL_H

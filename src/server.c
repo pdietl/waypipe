@@ -279,8 +279,18 @@ static int handle_new_server_connection(int cwd_fd,
 	}
 
 	int chanfd = -1;
-	if (connect_to_socket(cwd_fd, current_sockaddr, NULL, &chanfd) == -1) {
-		goto fail_appfd;
+	if (!config->vsock) {
+		if (connect_to_socket(cwd_fd, current_sockaddr, NULL,
+				    &chanfd) == -1) {
+			goto fail_appfd;
+		}
+	} else {
+#ifdef HAS_VSOCK
+		if (connect_to_vsock(config->vsock_port, config->vsock_cid,
+				    config->vsock_to_host, &chanfd) == -1) {
+			goto fail_appfd;
+		}
+#endif
 	}
 	if (write(chanfd, new_token, sizeof(*new_token)) !=
 			sizeof(*new_token)) {

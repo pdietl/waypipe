@@ -83,6 +83,7 @@ static const char usage_string[] =
 		"                         server default: /tmp/waypipe-server.sock\n"
 		"                         client default: /tmp/waypipe-client.sock\n"
 		"                         ssh: sets the prefix for the socket path\n"
+		"                         vsock: [[s]CID]:port\n"
 		"      --version        print waypipe version and exit\n"
 		"      --allow-tiled    allow gpu buffers (DMABUFs) with format modifiers\n"
 		"      --control C      server,ssh: set control pipe to reconnect server\n"
@@ -95,6 +96,9 @@ static const char usage_string[] =
 		"      --unlink-socket  server: unlink the socket that waypipe connects to\n"
 		"      --video[=V]      compress certain linear dmabufs only with a video codec\n"
 		"                         V is list of options: sw,hw,bpf=1.2e5,h264,vp9,av1\n"
+#ifdef HAS_VSOCK
+		"      --vsock          use vsock instead of unix socket\n"
+#endif
 		"\n";
 
 static int usage(int retcode)
@@ -347,6 +351,56 @@ static int parse_video_string(const char *str, struct main_config *config)
 }
 #endif
 
+#ifdef HAS_VSOCK
+static int parse_vsock_addr(const char *str, struct main_config *config)
+{
+	char tmp[128];
+	size_t l = strlen(str);
+	if (l >= 127) {
+		return -1;
+	}
+	memcpy(tmp, str, l + 1);
+
+	char *port = strchr(tmp, ':');
+	if (port) {
+		char *cid = tmp;
+		port[0] = 0;
+		port = port + 1;
+
+		size_t cid_len = strlen(cid);
+		if (cid_len > 0) {
+			if (cid[0] == 's') {
+				if (cid_len < 2) {
+					return -1;
+				}
+				config->vsock_to_host = true;
+				if (parse_uint32(cid + 1, &config->vsock_cid) ==
+						-1) {
+					return -1;
+				}
+			} else {
+				config->vsock_to_host = false;
+				if (parse_uint32(cid, &config->vsock_cid) ==
+						-1) {
+					return -1;
+				}
+			}
+		}
+	} else {
+		port = tmp;
+	}
+
+	if (parse_uint32(port, &config->vsock_port) == -1) {
+		return -1;
+	}
+
+	if (config->vsock_port <= 0) {
+		return -1;
+	}
+	return 0;
+}
+#endif
+
 static const char *feature_names[] = {
 		"lz4",
 		"zstd",
@@ -395,6 +449,9 @@ static const bool feature_flags[] = {
 #define ARG_CONTROL 1010
 #define ARG_WAYPIPE_BINARY 1011
 #define ARG_BENCH_TEST_SIZE 1012
+#ifdef HAS_VSOCK
+#define ARG_VSOCK 1013
+#endif
 
 static const struct option options[] = {
 		{"compress", required_argument, NULL, 'c'},
@@ -416,7 +473,10 @@ static const struct option options[] = {
 		{"display", required_argument, NULL, ARG_DISPLAY},
 		{"control", required_argument, NULL, ARG_CONTROL},
 		{"test-size", required_argument, NULL, ARG_BENCH_TEST_SIZE},
-		{0, 0, NULL, 0}};
+#ifdef HAS_VSOCK
+		{"vsock", no_argument, NULL, ARG_VSOCK}, {0, 0, NULL, 0}
+#endif
+};
 struct arg_permissions {
 	int val;
 	uint32_t mode_mask;
@@ -443,6 +503,9 @@ static const struct arg_permissions arg_permissions[] = {
 		{ARG_DISPLAY, MODE_SSH | MODE_SERVER},
 		{ARG_CONTROL, MODE_SSH | MODE_SERVER},
 		{ARG_BENCH_TEST_SIZE, MODE_BENCH},
+#ifdef HAS_VSOCK
+		{ARG_VSOCK, MODE_SSH | MODE_CLIENT | MODE_SERVER},
+#endif
 };
 
 /* envp is nonstandard, so use environ */
@@ -475,7 +538,11 @@ int main(int argc, char **argv)
 			.video_if_possible = false,
 			.video_bpf = 0,
 			.video_fmt = VIDEO_H264,
-			.prefer_hwvideo = false};
+			.prefer_hwvideo = false,
+			.vsock = false,
+			.vsock_cid = 2,         /* VMADDR_CID_HOST */
+			.vsock_to_host = false, /* VMADDR_FLAG_TO_HOST */
+			.vsock_port = 0};
 
 	/* We do not parse any getopt arguments happening after the mode choice
 	 * string, so as not to interfere with them. */
@@ -639,6 +706,11 @@ int main(int argc, char **argv)
 				fail = true;
 			}
 		} break;
+#ifdef HAS_VSOCK
+		case ARG_VSOCK:
+			config.vsock = true;
+			break;
+#endif
 		default:
 			fail = true;
 			break;
@@ -700,6 +772,17 @@ int main(int argc, char **argv)
 	if (config.video_bpf == 0) {
 		config.video_bpf = config.prefer_hwvideo ? 360000 : 120000;
 	}
+
+#ifdef HAS_VSOCK
+	if (config.vsock) {
+		if (socketpath == NULL) {
+			fprintf(stderr, "Socket option (-s, --socket) is required when vsock is enabled\n");
+			return EXIT_FAILURE;
+		}
+		if (parse_vsock_addr(socketpath, &config) == -1)
+			return usage(EXIT_FAILURE);
+	}
+#endif
 
 	if (debug) {
 		log_funcs[0] = log_handler;
@@ -769,17 +852,31 @@ int main(int argc, char **argv)
 
 			int nmaxclients = oneshot ? 1 : 128;
 			int client_folder_fd = -1, channelsock = -1;
-			if (setup_nb_socket(cwd_fd, client_sock_path,
-					    nmaxclients, &client_folder_fd,
-					    &channelsock) == -1) {
-				return EXIT_FAILURE;
+
+			if (!config.vsock) {
+				if (setup_nb_socket(cwd_fd, client_sock_path,
+						    nmaxclients,
+						    &client_folder_fd,
+						    &channelsock) == -1) {
+					return EXIT_FAILURE;
+				}
+			} else {
+#ifdef HAS_VSOCK
+				if (listen_on_vsock(config.vsock_port,
+						    nmaxclients,
+						    &channelsock) == -1) {
+					return EXIT_FAILURE;
+				}
+#endif
 			}
 			ret = run_client(cwd_fd, client_sock_path.folder,
 					client_folder_fd,
 					client_sock_path.filename->sun_path,
 					&config, oneshot, wayland_socket, 0,
 					channelsock);
-			checked_close(client_folder_fd);
+			if (!config.vsock) {
+				checked_close(client_folder_fd);
+			}
 		}
 	} else if (mode == MODE_SERVER) {
 		char *const *app_argv = (char *const *)argv;
@@ -870,18 +967,34 @@ int main(int argc, char **argv)
 
 		int nmaxclients = oneshot ? 1 : 128;
 		int channel_folder_fd = -1, channelsock = -1;
-		if (setup_nb_socket(cwd_fd, client_sock_path, nmaxclients,
-				    &channel_folder_fd, &channelsock) == -1) {
-			close(cwd_fd);
-			return EXIT_FAILURE;
-		}
-		if (set_cloexec(channelsock) == -1 ||
-				set_cloexec(channel_folder_fd) == -1) {
-			wp_error("Failed to make client socket or its folder cloexec");
-			close(channel_folder_fd);
-			close(channelsock);
-			close(cwd_fd);
-			return EXIT_FAILURE;
+		if (!config.vsock) {
+			if (setup_nb_socket(cwd_fd, client_sock_path,
+					    nmaxclients, &channel_folder_fd,
+					    &channelsock) == -1) {
+				close(cwd_fd);
+				return EXIT_FAILURE;
+			}
+			if (set_cloexec(channelsock) == -1 ||
+					set_cloexec(channel_folder_fd) == -1) {
+				wp_error("Failed to make client socket or its folder cloexec");
+				close(channel_folder_fd);
+				close(channelsock);
+				close(cwd_fd);
+				return EXIT_FAILURE;
+			}
+		} else {
+#ifdef HAS_VSOCK
+			if (listen_on_vsock(config.vsock_port, nmaxclients,
+					    &channelsock) == -1) {
+				return EXIT_FAILURE;
+			}
+			if (set_cloexec(channelsock) == -1) {
+				wp_error("Failed to make client socket or its folder cloexec");
+				close(channelsock);
+				close(cwd_fd);
+				return EXIT_FAILURE;
+			}
+#endif
 		}
 
 		pid_t conn_pid;
@@ -890,10 +1003,16 @@ int main(int argc, char **argv)
 			char serversock[256];
 			char video_str[140];
 			char remote_display[20];
-			sprintf(serversock, "%s-server-%s.sock", socketpath,
-					rbytes);
-			sprintf(linkage, "%s-server-%s.sock:%s-client-%s.sock",
-					socketpath, rbytes, socketpath, rbytes);
+			if (!config.vsock) {
+				sprintf(serversock, "%s-server-%s.sock",
+						socketpath, rbytes);
+				sprintf(linkage,
+						"%s-server-%s.sock:%s-client-%s.sock",
+						socketpath, rbytes, socketpath,
+						rbytes);
+			} else {
+				sprintf(serversock, "%d", config.vsock_port);
+			}
 			sprintf(remote_display, "wayland-%s", rbytes);
 			if (!wayland_display) {
 				wayland_display = remote_display;
@@ -921,8 +1040,10 @@ int main(int argc, char **argv)
 				 * `log_handler`. */
 				arglist[offset++] = "-t";
 			}
-			arglist[offset++] = "-R";
-			arglist[offset++] = linkage;
+			if (!config.vsock) {
+				arglist[offset++] = "-R";
+				arglist[offset++] = linkage;
+			}
 			for (int i = 0; i <= dstidx; i++) {
 				arglist[offset + i] = argv[i];
 			}
@@ -1009,12 +1130,14 @@ int main(int argc, char **argv)
 			arglist[dstidx + 1 + offset++] = serversock;
 			arglist[dstidx + 1 + offset++] = "--display";
 			arglist[dstidx + 1 + offset++] = wayland_display;
+			if (config.vsock) {
+				arglist[dstidx + 1 + offset++] = "--vsock";
+			}
 			arglist[dstidx + 1 + offset++] = "server";
 			for (int i = dstidx + 1; i < argc; i++) {
 				arglist[offset + i] = argv[i];
 			}
 			arglist[argc + offset] = NULL;
-
 			int err = posix_spawnp(&conn_pid, arglist[0], NULL,
 					NULL, arglist, environ);
 			if (err) {
@@ -1032,7 +1155,9 @@ int main(int argc, char **argv)
 				channel_folder_fd,
 				client_sock_path.filename->sun_path, &config,
 				oneshot, wayland_socket, conn_pid, channelsock);
-		checked_close(channel_folder_fd);
+		if (!config.vsock) {
+			checked_close(channel_folder_fd);
+		}
 	}
 	checked_close(cwd_fd);
 	check_unclosed_fds();
