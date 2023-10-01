@@ -83,7 +83,7 @@ static const char usage_string[] =
 		"                         server default: /tmp/waypipe-server.sock\n"
 		"                         client default: /tmp/waypipe-client.sock\n"
 		"                         ssh: sets the prefix for the socket path\n"
-		"                         vsock: [[s]CID]:port\n"
+		"                         vsock: [[s]CID:]port\n"
 		"      --version        print waypipe version and exit\n"
 		"      --allow-tiled    allow gpu buffers (DMABUFs) with format modifiers\n"
 		"      --control C      server,ssh: set control pipe to reconnect server\n"
@@ -779,8 +779,11 @@ int main(int argc, char **argv)
 			fprintf(stderr, "Socket option (-s, --socket) is required when vsock is enabled\n");
 			return EXIT_FAILURE;
 		}
-		if (parse_vsock_addr(socketpath, &config) == -1)
-			return usage(EXIT_FAILURE);
+		if (parse_vsock_addr(socketpath, &config) == -1) {
+			fprintf(stderr, "Invalid vsock address specification: '%s' does not match form [[s]CID:]port\n",
+					socketpath);
+			return EXIT_FAILURE;
+		}
 	}
 #endif
 
