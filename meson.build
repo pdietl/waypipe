@@ -66,7 +66,19 @@ is_darwin = host_machine.system() == 'darwin'
 if (is_linux or is_darwin) and get_option('with_systemtap') and cc.has_header('sys/sdt.h')
 	config_data.set('HAS_USDT', 1, description: 'Enable static trace probes')
 endif
-if is_linux and cc.has_header('linux/vm_sockets.h')
+has_flag_to_host = '''
+// linux/vm_sockets.h doesn't compile on its own
+// "invalid application of 'sizeof' to incomplete type 'struct sockaddr'"
+#include <sys/socket.h>
+#include <linux/vm_sockets.h>
+#ifndef VMADDR_FLAG_TO_HOST
+#error
+#endif
+int main(void) {
+        return 0;
+}
+'''
+if is_linux and cc.has_header('linux/vm_sockets.h') and cc.compiles(has_flag_to_host, name: 'has VMADDR_FLAG_TO_HOST')
 	config_data.set('HAS_VSOCK', 1, description: 'Enable VM Sockets (VSOCK)')
 endif
 liblz4 = dependency('liblz4', version: '>=1.7.0', required: get_option('with_lz4'))
