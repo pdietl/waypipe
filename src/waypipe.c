@@ -96,9 +96,7 @@ static const char usage_string[] =
 		"      --unlink-socket  server: unlink the socket that waypipe connects to\n"
 		"      --video[=V]      compress certain linear dmabufs only with a video codec\n"
 		"                         V is list of options: sw,hw,bpf=1.2e5,h264,vp9,av1\n"
-#ifdef HAS_VSOCK
 		"      --vsock          use vsock instead of unix socket\n"
-#endif
 		"\n";
 
 static int usage(int retcode)
@@ -449,9 +447,7 @@ static const bool feature_flags[] = {
 #define ARG_CONTROL 1010
 #define ARG_WAYPIPE_BINARY 1011
 #define ARG_BENCH_TEST_SIZE 1012
-#ifdef HAS_VSOCK
 #define ARG_VSOCK 1013
-#endif
 
 static const struct option options[] = {
 		{"compress", required_argument, NULL, 'c'},
@@ -473,10 +469,7 @@ static const struct option options[] = {
 		{"display", required_argument, NULL, ARG_DISPLAY},
 		{"control", required_argument, NULL, ARG_CONTROL},
 		{"test-size", required_argument, NULL, ARG_BENCH_TEST_SIZE},
-#ifdef HAS_VSOCK
-		{"vsock", no_argument, NULL, ARG_VSOCK}, {0, 0, NULL, 0}
-#endif
-};
+		{"vsock", no_argument, NULL, ARG_VSOCK}, {0, 0, NULL, 0}};
 struct arg_permissions {
 	int val;
 	uint32_t mode_mask;
@@ -503,9 +496,7 @@ static const struct arg_permissions arg_permissions[] = {
 		{ARG_DISPLAY, MODE_SSH | MODE_SERVER},
 		{ARG_CONTROL, MODE_SSH | MODE_SERVER},
 		{ARG_BENCH_TEST_SIZE, MODE_BENCH},
-#ifdef HAS_VSOCK
 		{ARG_VSOCK, MODE_SSH | MODE_CLIENT | MODE_SERVER},
-#endif
 };
 
 /* envp is nonstandard, so use environ */
@@ -706,10 +697,13 @@ int main(int argc, char **argv)
 				fail = true;
 			}
 		} break;
-#ifdef HAS_VSOCK
 		case ARG_VSOCK:
+#ifdef HAS_VSOCK
 			config.vsock = true;
 			break;
+#else
+			fprintf(stderr, "Option --vsock not allowed: this copy of Waypipe was not built with support for Linux VM sockets.\n");
+			return EXIT_FAILURE;
 #endif
 		default:
 			fail = true;
