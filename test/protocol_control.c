@@ -68,7 +68,7 @@ static void print_pass(bool pass)
 
 static char *make_filled_pattern(size_t size, uint32_t contents)
 {
-	uint32_t *mem = calloc(size, 1);
+	uint32_t *mem = calloc(1, size);
 	for (size_t i = 0; i < size / 4; i++) {
 		mem[i] = contents;
 	}
