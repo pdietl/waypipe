@@ -112,6 +112,66 @@ size_t multi_strcat(char *dest, size_t dest_space, ...)
 	return net_len;
 }
 
+bool is_utf8(const char *str)
+{
+	/* See Unicode Standard 15.0.0, Chapter 3, D92 and Table 3.7. */
+	const uint8_t *v = (const uint8_t *)str;
+	while (*v) {
+		if (v[0] <= 0x7f) {
+			v++;
+		} else if (v[0] <= 0xdf) {
+			if (v[1] < 0x80 || v[1] > 0xbf) {
+				return false;
+			}
+			v += 2;
+		} else if (v[0] <= 0xef) {
+			if (v[0] == 0xe0) {
+				if (v[1] < 0xa0 || v[1] > 0xbf) {
+					return false;
+				}
+			} else if (v[0] <= 0xec) {
+				if (v[1] < 0x80 || v[1] > 0xbf) {
+					return false;
+				}
+			} else if (v[0] == 0xed) {
+				if (v[1] < 0x80 || v[1] > 0x9f) {
+					return false;
+				}
+			} else {
+				if (v[1] < 0x80 || v[1] > 0xbf) {
+					return false;
+				}
+			}
+			if (v[2] < 0x80 || v[2] > 0xbf) {
+				return false;
+			}
+			v += 3;
+		} else if (v[0] <= 0xf4) {
+			if (v[0] == 0xf0) {
+				if (v[1] < 0x90 || v[1] > 0xbf) {
+					return false;
+				}
+			} else if (v[0] <= 0xf3) {
+				if (v[1] < 0x80 || v[1] > 0xbf) {
+					return false;
+				}
+			} else {
+				if (v[1] < 0x80 || v[1] > 0x8f) {
+					return false;
+				}
+			}
+			if (v[2] < 0x80 || v[2] > 0xbf || v[3] < 0x80 ||
+					v[3] > 0xbf) {
+				return false;
+			}
+			v += 4;
+		} else {
+			return false;
+		}
+	}
+	return true;
+}
+
 bool shutdown_flag = false;
 uint64_t inherited_fds[4] = {0, 0, 0, 0};
 void handle_sigint(int sig)

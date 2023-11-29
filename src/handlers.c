@@ -1975,4 +1975,31 @@ void do_zwlr_gamma_control_v1_req_set_gamma(struct context *ctx, int fd)
 	sfd->has_owner = true;
 }
 
+#define MSGNO_XDG_TOPLEVEL_REQ_SET_TITLE 2
+void do_xdg_toplevel_req_set_title(struct context *ctx, const char *str)
+{
+	if (!ctx->g->config->title_prefix) {
+		return;
+	}
+	size_t prefix_len = strlen(ctx->g->config->title_prefix);
+	if (4 + (int)prefix_len >= ctx->message_available_space) {
+		wp_error("Not enough space (%d left, at most %d needed) to prepend title prefix",
+				ctx->message_available_space, 4 + prefix_len);
+		return;
+	}
+	size_t title_len = strlen(str);
+	size_t str_part = alignz(prefix_len + title_len + 1, 4);
+
+	ctx->message[1] = message_header_2((uint32_t)str_part + 12,
+			MSGNO_XDG_TOPLEVEL_REQ_SET_TITLE);
+	ctx->message[2] = (uint32_t)(prefix_len + title_len + 1);
+	char *v = (char *)&ctx->message[3];
+	// Using memmove, as str=&ctx->message[3]
+	memmove(v + prefix_len, v, title_len);
+	memset(v + prefix_len + title_len, 0,
+			str_part - prefix_len - title_len);
+	memcpy(v, ctx->g->config->title_prefix, prefix_len);
+	ctx->message_length = 12 + (int)str_part;
+}
+
 const struct wp_interface *the_display_interface = &intf_wl_display;

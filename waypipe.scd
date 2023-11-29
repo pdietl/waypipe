@@ -14,7 +14,7 @@ waypipe - A transparent proxy for Wayland applications
 *waypipe* *bench* _bandwidth_++
 *waypipe* [*--version*] [*-h*, *--help*]
 
-\[options...\] = [*-c*, *--compress* C] [*-d*, *--debug*] [*-n*, *--no-gpu*] [*-o*, *--oneshot*] [*-s*, *--socket* S] [*--allow-tiled*] [*--control* C] [*--display* D] [*--drm-node* R] [*--remote-node* R] [*--remote-bin* R] [*--login-shell*] [*--threads* T] [*--unlink-socket*] [*--video*[=V]] [*--vsock*]
+\[options...\] = [*-c*, *--compress* C] [*-d*, *--debug*] [*-n*, *--no-gpu*] [*-o*, *--oneshot*] [*-s*, *--socket* S] [*--allow-tiled*] [*--control* C] [*--display* D] [*--drm-node* R] [*--remote-node* R] [*--remote-bin* R] [*--login-shell*] [*--threads* T] [*--title-prefix* P] [*--unlink-socket*] [*--video*[=V]] [*--vsock*]
 
 
 # DESCRIPTION
@@ -133,6 +133,10 @@ compressible as images containing pictures.
 	ssh*. The flag also controls the thread count for *waypipe bench*. The default
 	behavior (choosable by setting *T* to _0_) is to use half as many threads
 	as the computer has hardware threads available.
+
+*--title-prefix P*
+	Prepend *P* to any window titles specified using the XDG shell protocol. In
+	ssh mode, the prefix is applied only on the client side.
 
 *--unlink-socket*
 	Only for server mode; on shutdown, unlink the Unix socket that waypipe connects to.

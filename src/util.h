@@ -82,6 +82,9 @@ int parse_uint32(const char *str, uint32_t *val);
  * Last argment must be NULL. If there is not enough space, returns 0. */
 size_t multi_strcat(char *dest, size_t dest_space, ...);
 
+/** Is the string a well-formed UTF-8 code point sequence, per Unicode 15.0? */
+bool is_utf8(const char *str);
+
 /** Make the file underlying this file descriptor nonblocking.
  * Silently return -1 on failure. */
 int set_nonblocking(int fd);

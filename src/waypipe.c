@@ -93,6 +93,7 @@ static const char usage_string[] =
 		"      --remote-bin R   ssh: set the remote waypipe binary. default: waypipe\n"
 		"      --login-shell    server: if server CMD is empty, run a login shell\n"
 		"      --threads T      set thread pool size, default=hardware threads/2\n"
+		"      --title-prefix P prepend P to all window titles\n"
 		"      --unlink-socket  server: unlink the socket that waypipe connects to\n"
 		"      --video[=V]      compress certain linear dmabufs only with a video codec\n"
 		"                         V is list of options: sw,hw,bpf=1.2e5,h264,vp9,av1\n"
@@ -448,6 +449,7 @@ static const bool feature_flags[] = {
 #define ARG_WAYPIPE_BINARY 1011
 #define ARG_BENCH_TEST_SIZE 1012
 #define ARG_VSOCK 1013
+#define ARG_TITLE_PREFIX 1014
 
 static const struct option options[] = {
 		{"compress", required_argument, NULL, 'c'},
@@ -469,25 +471,24 @@ static const struct option options[] = {
 		{"display", required_argument, NULL, ARG_DISPLAY},
 		{"control", required_argument, NULL, ARG_CONTROL},
 		{"test-size", required_argument, NULL, ARG_BENCH_TEST_SIZE},
-		{"vsock", no_argument, NULL, ARG_VSOCK}, {0, 0, NULL, 0}};
+		{"vsock", no_argument, NULL, ARG_VSOCK},
+		{"title-prefix", required_argument, NULL, ARG_TITLE_PREFIX},
+		{0, 0, NULL, 0}};
 struct arg_permissions {
 	int val;
 	uint32_t mode_mask;
 };
 #define ALL_MODES (uint32_t) - 1
 static const struct arg_permissions arg_permissions[] = {
-		{'c', MODE_SSH | MODE_CLIENT | MODE_SERVER},
-		{'d', ALL_MODES},
-		{'h', MODE_FAIL},
-		{'n', MODE_SSH | MODE_CLIENT | MODE_SERVER},
+		{'c', MODE_SSH | MODE_CLIENT | MODE_SERVER}, {'d', ALL_MODES},
+		{'h', MODE_FAIL}, {'n', MODE_SSH | MODE_CLIENT | MODE_SERVER},
 		{'o', MODE_SSH | MODE_CLIENT | MODE_SERVER},
 		{'s', MODE_SSH | MODE_CLIENT | MODE_SERVER},
 		{ARG_VERSION, MODE_FAIL},
 		{ARG_ALLOW_TILED, MODE_SSH | MODE_CLIENT | MODE_SERVER},
 		{ARG_UNLINK, MODE_SERVER},
 		{ARG_DRMNODE, MODE_SSH | MODE_CLIENT | MODE_SERVER},
-		{ARG_REMOTENODE, MODE_SSH},
-		{ARG_WAYPIPE_BINARY, MODE_SSH},
+		{ARG_REMOTENODE, MODE_SSH}, {ARG_WAYPIPE_BINARY, MODE_SSH},
 		{ARG_LOGIN_SHELL, MODE_SERVER},
 		{ARG_VIDEO, MODE_SSH | MODE_CLIENT | MODE_SERVER},
 		{ARG_HWVIDEO, MODE_SSH | MODE_CLIENT | MODE_SERVER},
@@ -497,7 +498,7 @@ static const struct arg_permissions arg_permissions[] = {
 		{ARG_CONTROL, MODE_SSH | MODE_SERVER},
 		{ARG_BENCH_TEST_SIZE, MODE_BENCH},
 		{ARG_VSOCK, MODE_SSH | MODE_CLIENT | MODE_SERVER},
-};
+		{ARG_TITLE_PREFIX, MODE_SSH | MODE_CLIENT | MODE_SERVER}};
 
 /* envp is nonstandard, so use environ */
 extern char **environ;
@@ -520,7 +521,8 @@ int main(int argc, char **argv)
 	char *socketpath = NULL;
 	uint32_t bench_test_size = (1u << 22) + 13;
 
-	struct main_config config = {.n_worker_threads = 0,
+	struct main_config config = {
+			.n_worker_threads = 0,
 			.drm_node = NULL,
 			.compression = COMP_NONE,
 			.compression_level = 0,
@@ -533,7 +535,9 @@ int main(int argc, char **argv)
 			.vsock = false,
 			.vsock_cid = 2,         /* VMADDR_CID_HOST */
 			.vsock_to_host = false, /* VMADDR_FLAG_TO_HOST */
-			.vsock_port = 0};
+			.vsock_port = 0,
+			.title_prefix = NULL,
+	};
 
 	/* We do not parse any getopt arguments happening after the mode choice
 	 * string, so as not to interfere with them. */
@@ -705,6 +709,17 @@ int main(int argc, char **argv)
 			fprintf(stderr, "Option --vsock not allowed: this copy of Waypipe was not built with support for Linux VM sockets.\n");
 			return EXIT_FAILURE;
 #endif
+		case ARG_TITLE_PREFIX:
+			if (!is_utf8(optarg)) {
+				fprintf(stderr, "Title prefix argument must be valid UTF-8.\n");
+				return EXIT_FAILURE;
+			}
+			if (strlen(optarg) > 128) {
+				fprintf(stderr, "Title prefix is too long (>128 bytes).\n");
+				return EXIT_FAILURE;
+			}
+			config.title_prefix = optarg;
+			break;
 		default:
 			fail = true;
 			break;
