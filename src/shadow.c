@@ -718,6 +718,7 @@ static void worker_run_compress_diff(
 {
 	struct shadow_fd *sfd = task->sfd;
 	struct thread_pool *pool = local->pool;
+	size_t diffsize = (size_t)-1;
 
 	size_t damage_space = 0;
 	for (int i = 0; i < task->damage_len; i++) {
@@ -798,7 +799,7 @@ static void worker_run_compress_diff(
 		source = sfd->dmabuf_warped;
 	}
 
-	size_t diffsize = construct_diff_core(pool->diff_func,
+	diffsize = construct_diff_core(pool->diff_func,
 			pool->diff_alignment_bits, task->damage_intervals,
 			task->damage_len, sfd->mem_mirror, source, diff_target);
 	size_t ntrailing = 0;
