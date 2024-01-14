@@ -232,6 +232,23 @@ static const struct wp_interface *const non_global_interfaces[] = {
 		&intf_zwp_primary_selection_source_v1,
 };
 
+static void cleanup_dmabuf_params_fds(struct obj_zwp_linux_dmabuf_params *r)
+{
+	// Sometimes multiple entries point to the same buffer
+	for (int i = 0; i < MAX_DMABUF_PLANES; i++) {
+		int fd = r->add[i].fd;
+		if (fd != -1) {
+			checked_close(fd);
+
+			for (int k = 0; k < MAX_DMABUF_PLANES; k++) {
+				if (fd == r->add[k].fd) {
+					r->add[k].fd = -1;
+				}
+			}
+		}
+	}
+}
+
 void destroy_wp_object(struct wp_object *object)
 {
 	if (object->type == &intf_wl_shm_pool) {
@@ -267,17 +284,8 @@ void destroy_wp_object(struct wp_object *object)
 			if (r->add[i].buffer) {
 				shadow_decref_protocol(r->add[i].buffer);
 			}
-			// Sometimes multiple entries point to the same buffer
-			if (r->add[i].fd != -1) {
-				checked_close(r->add[i].fd);
-
-				for (int k = 0; k < MAX_DMABUF_PLANES; k++) {
-					if (r->add[i].fd == r->add[k].fd) {
-						r->add[k].fd = -1;
-					}
-				}
-			}
 		}
+		cleanup_dmabuf_params_fds(r);
 	} else if (object->type == &intf_zwlr_export_dmabuf_frame_v1) {
 		struct obj_wlr_export_dmabuf_frame *r =
 				(struct obj_wlr_export_dmabuf_frame *)object;
@@ -1339,12 +1347,17 @@ void do_zwp_linux_buffer_params_v1_evt_created(
 					i);
 			continue;
 		}
-		buf->dmabuf_buffers[i] =
-				shadow_incref_protocol(params->add[i].buffer);
+		// Move protocol reference from `params` to `buf`
+		// (The params object can only be used to create one buffer,
+		// so this ensures that if the params object leaks, the
+		// shadow_fd does not leak as well.)
+		buf->dmabuf_buffers[i] = params->add[i].buffer;
 		buf->dmabuf_offsets[i] = params->add[i].offset;
 		buf->dmabuf_strides[i] = params->add[i].stride;
 		buf->dmabuf_modifiers[i] = params->add[i].modifier;
+		params->add[i].buffer = NULL;
 	}
+	cleanup_dmabuf_params_fds(params);
 	buf->dmabuf_flags = params->create_flags;
 	buf->dmabuf_width = params->create_width;
 	buf->dmabuf_height = params->create_height;
